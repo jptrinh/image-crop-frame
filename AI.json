@@ -1,0 +1,92 @@
+{
+    "metadata": {
+        "name": "image-crop-frame",
+        "description": "Image fitted inside the element with a draggable crop window of a fixed ratio and a composition overlay; the crop is stored as a focus point (centre of the crop, 0–1), the same rule as imgproxy's gravity fp:x:y.",
+        "keywords": ["crop", "image", "focus point", "aspect ratio", "drag", "rule of thirds", "golden ratio", "composition"],
+        "features": [
+            "Image fitted inside the element without distortion (contain)",
+            "Crop window of any ratio (\"4:5\", \"16:9\", or a number)",
+            "Drag to move the crop, only along the axis the ratio leaves free",
+            "Arrow keys (Shift = 10%) once focused with Tab; a mouse drag does not take focus",
+            "Double-click to centre the crop",
+            "Composition overlays: rule of thirds, golden ratio (phi grid), grid, diagonals, golden triangle, golden spiral, center cross, none; triangle and spiral can be flipped",
+            "Area outside the crop darkened",
+            "Loading spinner until the image has loaded",
+            "Emits change on release, not while dragging",
+            "Local context: focus, crop box, output size in px, trimmed side",
+            "Actions: center crop, set focus point",
+            "States: dragging, disabled",
+            "Does not resize (zoom) the crop: it is always the largest box of the ratio"
+        ],
+        "inherit": []
+    },
+    "properties": [
+        { "name": "imageUrl", "description": "URL of the image.", "type": "string", "defaultValue": "https://cdn.weweb.app/public/images/no_image_selected.png" },
+        { "name": "alt", "description": "Alt text of the image.", "type": "string", "defaultValue": "" },
+        { "name": "ariaLabel", "description": "Accessible name of the crop window. Empty = the element name, else \"Crop area\".", "type": "string", "defaultValue": "" },
+        { "name": "imageWidth", "description": "Width of the original in px. Empty = taken from the loaded image. Also used for the output size in the local context.", "type": "number", "defaultValue": null },
+        { "name": "imageHeight", "description": "Height of the original in px. Empty = taken from the loaded image.", "type": "number", "defaultValue": null },
+        { "name": "ratio", "description": "Crop ratio width:height, e.g. \"4:5\". Empty = 4:3.", "type": "string", "defaultValue": "4:3" },
+        { "name": "focusX", "description": "Horizontal centre of the crop, 0–1. Empty = 0.5. While the user drags, and until this value changes, the component shows its own position.", "type": "number", "defaultValue": null },
+        { "name": "focusY", "description": "Vertical centre of the crop, 0–1. Empty = 0.5.", "type": "number", "defaultValue": null },
+        { "name": "darken", "description": "0–100: darkness of the area outside the crop.", "type": "number", "defaultValue": 45 },
+        { "name": "overlay", "description": "Composition guide inside the crop window.", "type": "string", "options": ["none", "thirds", "golden", "grid", "diagonal", "triangle", "spiral", "center"], "defaultValue": "thirds" },
+        { "name": "gridDivisions", "description": "overlay = grid: number of square cells along the short side (2–12).", "type": "number", "defaultValue": 4 },
+        { "name": "overlayFlipH", "description": "overlay = triangle / spiral: mirror left–right.", "type": "boolean", "defaultValue": false },
+        { "name": "overlayFlipV", "description": "overlay = triangle / spiral: mirror top–bottom.", "type": "boolean", "defaultValue": false },
+        { "name": "overlayOpacity", "description": "0–100: opacity of the guide lines.", "type": "number", "defaultValue": 40 },
+        { "name": "disabled", "description": "Prevent the user from moving the crop (actions still work).", "type": "boolean", "defaultValue": false },
+        { "name": "frameColor", "description": "Color of the crop border and focus ring. Style property (responsive, states, classes).", "type": "string", "defaultValue": "#FFFFFF" },
+        { "name": "overlayColor", "description": "Color of the guide lines. Style property (responsive, states, classes).", "type": "string", "defaultValue": "#FFFFFF" },
+        { "name": "spinnerColor", "description": "Color of the loading spinner. Style property (responsive, states, classes).", "type": "string", "defaultValue": "#6E6E73" }
+    ],
+    "states": [
+        { "name": "dragging", "description": "While the user drags the crop (root has data-dragging=\"true\")." },
+        { "name": "disabled", "description": "When `disabled` is on (root has aria-disabled=\"true\")." }
+    ],
+    "events": [
+        {
+            "name": "change",
+            "description": "The crop moved: drag released, arrow keys stopped for 400 ms, double-click to centre, or an action. Save event.value there (in a js formula the event is `event`, not `context.event`).",
+            "payload": { "value": { "x": "number, new horizontal focus point (0–1, 4 decimals)", "y": "number, new vertical focus point (0–1, 4 decimals)" } }
+        }
+    ],
+    "localContext": [
+        {
+            "name": "imageCropFrame",
+            "description": "Live crop info: focus { x, y }; crop { focusX, focusY, left, top, width, height } (fractions); output { width, height } in px of the original (null while its size is unknown); trim { axis: 'width' | 'height' | null, percent }; ratio; isDragging; isLoaded."
+        }
+    ],
+    "actions": [
+        { "label": "Center crop", "actionName": "centerCrop", "description": "Moves the focus point to the centre and emits change.", "args": [] },
+        {
+            "label": "Set focus point",
+            "actionName": "setFocus",
+            "description": "Moves the focus point and emits change (nothing if unchanged). An empty or invalid coordinate keeps its current value; values are clamped to 0–1.",
+            "args": [
+                { "name": "x", "type": "number", "description": "Horizontal centre, 0–1" },
+                { "name": "y", "type": "number", "description": "Vertical centre, 0–1" }
+            ]
+        }
+    ],
+    "slots": [],
+    "variables": [
+        {
+            "name": "value",
+            "description": "Current crop, live while dragging: { focusX, focusY, left, top, width, height }, all fractions of the image (0–1).",
+            "type": "object",
+            "readonly": true
+        }
+    ],
+    "specifications": [
+        "The element needs a height (and width): the image is fitted inside it, centred.",
+        "Crop box = largest box of `ratio` inside the image, as centred on (focusX, focusY) as the image allows. Moving only changes the free axis; the other keeps its stored value.",
+        "Bind focusX / focusY to the stored point and save on the change event; after a change the component keeps showing its own position until the bound values change, so an optimistic update avoids any jump.",
+        "Moving is disabled in the editor's edit mode (selection keeps working).",
+        "The golden spiral and triangle are stretched to the crop window, like in photo editors; flip them to match the subject."
+    ],
+    "examples": [
+        { "description": "Portrait crop of a landscape photo, saved point, golden spiral", "example": "{\"imageUrl\": \"https://example.com/photo.webp\", \"imageWidth\": 6240, \"imageHeight\": 4160, \"ratio\": \"4:5\", \"focusX\": 0.3, \"focusY\": 0.5, \"overlay\": \"spiral\"}" }
+    ],
+    "dependencies": []
+}
