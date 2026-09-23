@@ -542,8 +542,7 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
 .image-crop-frame__snap-guide {
     position: absolute;
     pointer-events: none;
-    background: var(--icf-frame-color, #ffffff);
-    opacity: 0.8;
+    background: var(--icf-snap-line-color, #ffffff);
 
     &.is-vertical {
         top: 0;

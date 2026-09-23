@@ -30,7 +30,7 @@
         { "name": "ratio", "description": "Crop ratio width:height, e.g. \"4:5\". Empty = 4:3.", "type": "string", "defaultValue": "4:3" },
         { "name": "focusX", "description": "Horizontal centre of the crop, 0–1. Empty = 0.5. While the user drags, and until this value changes, the component shows its own position.", "type": "number", "defaultValue": null },
         { "name": "focusY", "description": "Vertical centre of the crop, 0–1. Empty = 0.5.", "type": "number", "defaultValue": null },
-        { "name": "snapToCenter", "description": "While dragging, snap the crop centre to the image centre when within snapDistance, and show a centre line. Arrow keys and actions do not snap.", "type": "boolean", "defaultValue": false },
+        { "name": "snapToCenter", "description": "While dragging, snap the crop centre to the image centre when within snapDistance, and show a centre line (color: snapLineColor). Arrow keys and actions do not snap.", "type": "boolean", "defaultValue": false },
         { "name": "snapDistance", "description": "snapToCenter on: snap distance in screen px.", "type": "number", "defaultValue": 8 },
         { "name": "darken", "description": "0–100: darkness of the area outside the crop.", "type": "number", "defaultValue": 45 },
         { "name": "overlay", "description": "Composition guide inside the crop window.", "type": "string", "options": ["none", "thirds", "golden", "grid", "diagonal", "triangle", "spiral", "center"], "defaultValue": "thirds" },
@@ -41,6 +41,7 @@
         { "name": "disabled", "description": "Prevent the user from moving the crop (actions still work).", "type": "boolean", "defaultValue": false },
         { "name": "frameColor", "description": "Color of the crop border and focus ring. Style property (responsive, states, classes).", "type": "string", "defaultValue": "#FFFFFF" },
         { "name": "overlayColor", "description": "Color of the guide lines. Style property (responsive, states, classes).", "type": "string", "defaultValue": "#FFFFFF" },
+        { "name": "snapLineColor", "description": "Color of the centre line shown while snapped (snapToCenter). Style property (responsive, states, classes).", "type": "string", "defaultValue": "#FFFFFF" },
         { "name": "spinnerColor", "description": "Color of the loading spinner. Style property (responsive, states, classes).", "type": "string", "defaultValue": "#6E6E73" }
     ],
     "states": [

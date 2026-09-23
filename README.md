@@ -18,7 +18,7 @@ imgproxy's `gravity:fp:x:y` rule, so `rs:fill:W:H/g:fp:x:y` reproduces the previ
   10%), double-click to centre. A mouse drag does not take focus, so page shortcuts on the arrow
   keys keep working.
 - **Snap to middle** (off by default): while dragging, the crop sticks to the image centre once
-  its centre is within **Snap distance** px (8), and a centre line shows. Arrow keys don't snap.
+  its centre is within **Snap distance** px (8), and a centre line shows (style property **Snap line color**). Arrow keys don't snap.
 - Overlays: rule of thirds, golden ratio (phi grid), grid, diagonals, golden triangle, golden
   spiral, center cross, none. Triangle and spiral can be flipped.
 - Local context `imageCropFrame`: focus, crop box, output size in px, trimmed side.

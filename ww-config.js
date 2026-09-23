@@ -15,13 +15,14 @@ export default {
             ['overlay', 'gridDivisions', 'overlayFlipH', 'overlayFlipV', 'overlayOpacity'],
             'disabled',
         ],
-        customStylePropertiesOrder: ['frameColor', 'overlayColor', 'spinnerColor'],
+        customStylePropertiesOrder: ['frameColor', 'overlayColor', 'snapLineColor', 'spinnerColor'],
     },
     // Style-panel colors, compiled by WeWeb per breakpoint / state / class
     css({ content }) {
         return [
             { property: '--icf-frame-color', value: content.frameColor },
             { property: '--icf-overlay-color', value: content.overlayColor },
+            { property: '--icf-snap-line-color', value: content.snapLineColor },
             { property: '--icf-spinner-color', value: content.spinnerColor },
         ];
     },
@@ -316,6 +317,21 @@ export default {
             /* wwEditor:start */
             bindingValidation: { cssSupports: 'color', type: 'string', tooltip: 'CSS color' },
             propertyHelp: { tooltip: 'Color of the guide lines (see Overlay opacity).' },
+            /* wwEditor:end */
+        },
+        snapLineColor: {
+            label: { en: 'Snap line color' },
+            type: 'Color',
+            section: 'style',
+            responsive: true,
+            states: true,
+            classes: true,
+            bindable: true,
+            defaultValue: '#FFFFFF',
+            hidden: content => !content?.snapToCenter,
+            /* wwEditor:start */
+            bindingValidation: { cssSupports: 'color', type: 'string', tooltip: 'CSS color' },
+            propertyHelp: { tooltip: 'Centre line shown while the crop is snapped (see Snap to middle).' },
             /* wwEditor:end */
         },
         spinnerColor: {
