@@ -10,6 +10,7 @@ export default {
             ['imageWidth', 'imageHeight'],
             'ratio',
             ['focusX', 'focusY'],
+            ['snapToCenter', 'snapDistance'],
             'darken',
             ['overlay', 'gridDivisions', 'overlayFlipH', 'overlayFlipV', 'overlayOpacity'],
             'disabled',
@@ -162,6 +163,32 @@ export default {
                 tooltip: 'Vertical centre of the crop, 0 (top) to 1 (bottom). Empty = 0.5.',
             },
             propertyHelp: { tooltip: 'Saved vertical focus point.' },
+            /* wwEditor:end */
+        },
+        snapToCenter: {
+            label: { en: 'Snap to middle' },
+            type: 'OnOff',
+            section: 'settings',
+            bindable: true,
+            defaultValue: false,
+            /* wwEditor:start */
+            bindingValidation: { type: 'boolean', tooltip: 'true to snap the crop to the image centre while dragging' },
+            propertyHelp: {
+                tooltip: 'While dragging, the crop sticks to the middle of the image when it gets close, and a centre line shows.',
+            },
+            /* wwEditor:end */
+        },
+        snapDistance: {
+            label: { en: 'Snap distance (px)' },
+            type: 'Number',
+            section: 'settings',
+            options: { min: 0, max: 50, step: 1 },
+            bindable: true,
+            defaultValue: 8,
+            hidden: content => !content?.snapToCenter,
+            /* wwEditor:start */
+            bindingValidation: { type: 'number', tooltip: 'Distance in px (on screen) at which the crop snaps' },
+            propertyHelp: { tooltip: 'How close (in screen px) the crop centre must get to the image centre to snap.' },
             /* wwEditor:end */
         },
         darken: {

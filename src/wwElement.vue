@@ -50,6 +50,8 @@
                     <path :d="overlayD" vector-effect="non-scaling-stroke" />
                 </svg>
             </div>
+            <span v-if="snapped.x" class="image-crop-frame__snap-guide is-vertical" aria-hidden="true"></span>
+            <span v-if="snapped.y" class="image-crop-frame__snap-guide is-horizontal" aria-hidden="true"></span>
             <span :id="helpId" class="image-crop-frame__help">
                 Drag, or use the arrow keys (Shift for bigger steps), to move the crop. Double-click to centre it.
             </span>
@@ -275,6 +277,19 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
             };
         };
 
+        /* ---------- Snap to the middle (drag only) ---------- */
+        // Which axes are currently held on the image centre, for the guide lines
+        const snapped = ref({ x: false, y: false });
+        // Top-left corner (fraction) → the centred one when the crop centre is within the snap distance
+        const snapStart = (start, size, boxPx) => {
+            if (!props.content?.snapToCenter) return { value: start, isSnapped: false };
+            const distance = Math.max(0, Number(props.content?.snapDistance ?? 8) || 0);
+            const centred = 0.5 - size / 2;
+            return Math.abs(start - centred) * boxPx <= distance
+                ? { value: centred, isSnapped: true }
+                : { value: start, isSnapped: false };
+        };
+
         /* ---------- Drag ---------- */
         let drag = null;
         const onMouseDown = event => {
@@ -305,10 +320,14 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
         };
         const onPointerMove = event => {
             if (!drag || event.pointerId !== drag.pointerId) return;
-            moveTo(
-                drag.startLeft + (event.clientX - drag.startX) / drag.width,
-                drag.startTop + (event.clientY - drag.startY) / drag.height
-            );
+            const { width, height } = cropSize.value;
+            const left = snapStart(drag.startLeft + (event.clientX - drag.startX) / drag.width, width, drag.width);
+            const top = snapStart(drag.startTop + (event.clientY - drag.startY) / drag.height, height, drag.height);
+            snapped.value = {
+                x: canMoveX.value && left.isSnapped,
+                y: canMoveY.value && top.isSnapped,
+            };
+            moveTo(left.value, top.value);
         };
         const onPointerUp = event => {
             if (!drag || event.pointerId !== drag.pointerId) return;
@@ -322,6 +341,7 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
                 round4(focus.value.y) !== round4(drag.startFocus.y);
             drag = null;
             isDragging.value = false;
+            snapped.value = { x: false, y: false };
             if (moved) emitChange();
         };
 
@@ -421,6 +441,7 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
             onImageLoad,
             canMove,
             isDragging,
+            snapped,
             onMouseDown,
             onPointerDown,
             onPointerMove,
@@ -514,6 +535,29 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
     }
     &.is-crisp path {
         shape-rendering: crispEdges;
+    }
+}
+
+// Image centre line, shown while a drag is held on it
+.image-crop-frame__snap-guide {
+    position: absolute;
+    pointer-events: none;
+    background: var(--icf-frame-color, #ffffff);
+    opacity: 0.8;
+
+    &.is-vertical {
+        top: 0;
+        bottom: 0;
+        left: 50%;
+        width: 1px;
+        margin-left: -0.5px;
+    }
+    &.is-horizontal {
+        left: 0;
+        right: 0;
+        top: 50%;
+        height: 1px;
+        margin-top: -0.5px;
     }
 }
 
