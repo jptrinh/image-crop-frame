@@ -1,0 +1,18 @@
+{
+    "name": "image-crop-frame",
+    "version": "1.0.0",
+    "description": "WeWeb coded component: image with a draggable crop window of a fixed ratio and composition overlays; the crop is a focus point (0–1).",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/jptrinh/image-crop-frame"
+    },
+    "scripts": {
+        "build": "weweb build",
+        "serve": "weweb serve"
+    },
+    "dependencies": {},
+    "devDependencies": {
+        "@weweb/cli": "latest"
+    }
+}
