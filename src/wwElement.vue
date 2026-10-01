@@ -3,13 +3,14 @@
         ref="root"
         class="image-crop-frame"
         :data-dragging="isDragging ? 'true' : null"
+        :data-zoomed="isZoomed ? 'true' : null"
         :aria-disabled="isDisabled ? 'true' : null"
     >
         <div
             v-if="imageUrl"
             ref="box"
             class="image-crop-frame__box"
-            :class="{ 'is-movable': canMove, 'is-dragging': isDragging }"
+            :class="{ 'is-movable': canMove, 'is-dragging': isDragging, 'is-zoom': zoomMode }"
             :style="boxStyle"
             @pointerdown="onPointerDown"
             @pointermove="onPointerMove"
@@ -23,6 +24,7 @@
                 :key="imageUrl"
                 class="image-crop-frame__image"
                 :class="{ 'is-loaded': isLoaded }"
+                :style="imageStyle"
                 :src="imageUrl"
                 :alt="content?.alt ?? ''"
                 draggable="false"
@@ -31,11 +33,11 @@
             <div
                 class="image-crop-frame__window"
                 :style="windowStyle"
-                :tabindex="canMove ? 0 : -1"
+                :tabindex="canMove || canZoom ? 0 : -1"
                 role="group"
                 aria-roledescription="crop area"
                 :aria-label="accessibleName"
-                :aria-describedby="canMove ? helpId : null"
+                :aria-describedby="canMove || canZoom ? helpId : null"
                 @keydown="onKeyDown"
             >
                 <svg
@@ -50,10 +52,20 @@
                     <path :d="overlayD" vector-effect="non-scaling-stroke" />
                 </svg>
             </div>
-            <span v-if="snapped.x" class="image-crop-frame__snap-guide is-vertical" aria-hidden="true"></span>
-            <span v-if="snapped.y" class="image-crop-frame__snap-guide is-horizontal" aria-hidden="true"></span>
+            <span
+                v-if="snapped.x"
+                class="image-crop-frame__snap-guide is-vertical"
+                :style="snapGuideStyle.x"
+                aria-hidden="true"
+            ></span>
+            <span
+                v-if="snapped.y"
+                class="image-crop-frame__snap-guide is-horizontal"
+                :style="snapGuideStyle.y"
+                aria-hidden="true"
+            ></span>
             <span :id="helpId" class="image-crop-frame__help">
-                Drag, or use the arrow keys (Shift for bigger steps), to move the crop. Double-click to centre it.
+                {{ helpText }}
             </span>
         </div>
     </div>
@@ -62,6 +74,15 @@
 <script>
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { overlayPath } from './overlays.js';
+import {
+    baseCropSize,
+    clampZoom,
+    cropRectFor,
+    frameRectFor,
+    imageRectFor,
+    maxZoomFor,
+    zoomAround,
+} from './zoomMath.js';
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 const round4 = value => Math.round(value * 10000) / 10000;
@@ -71,6 +92,7 @@ const toFraction = value => {
     const n = Number(value);
     return Number.isFinite(n) ? clamp(n, 0, 1) : null;
 };
+const isEmpty = value => value === null || value === undefined || value === '';
 // "4:5", "4/5", "4x5" or a plain number ("0.8") → width / height
 const parseRatio = value => {
     if (typeof value === 'number' && value > 0) return value;
@@ -107,6 +129,8 @@ export default {
 
         const imageUrl = computed(() => props.content?.imageUrl || '');
         const isDisabled = computed(() => !!props.content?.disabled);
+        // Zoom mode (iOS style): fixed frame, the image moves and scales under it. Off = the original behaviour.
+        const zoomMode = computed(() => !!props.content?.zoomEnabled);
 
         /* ---------- Image aspect ratio ---------- */
         // Known dimensions first (they arrive before the image), else the loaded image's own size
@@ -148,6 +172,7 @@ export default {
         });
         onBeforeUnmount(() => resizeObserver?.disconnect());
 
+        // Classic mode: the image contained in the element
         const boxSize = computed(() => {
             const { width, height } = available.value;
             if (!width || !height) return null;
@@ -155,19 +180,48 @@ export default {
             return { width: scale * imageRatio.value, height: scale };
         });
 
+        /* ---------- Zoom ---------- */
+        const targetRatio = computed(() => parseRatio(props.content?.ratio));
+        // Largest zoom that keeps the output at least minOutputWidth × minOutputHeight px (same rule as the backend)
+        const maxZoom = computed(() => {
+            const minWidth = isEmpty(props.content?.minOutputWidth) ? 1080 : Number(props.content.minOutputWidth) || 0;
+            const minHeight = Number(props.content?.minOutputHeight) || 0;
+            return maxZoomFor({
+                imageWidth: knownSize.value?.width,
+                imageHeight: knownSize.value?.height,
+                ratio: targetRatio.value,
+                minWidth,
+                minHeight,
+            });
+        });
+        // The bound value, unless the user just changed it (same idea as the focus point below)
+        const boundZoom = computed(() => {
+            const z = Number(props.content?.zoom);
+            return Number.isFinite(z) && z > 1 ? z : 1;
+        });
+        const localZoom = ref(null);
+        const isDragging = ref(false);
+        watch(
+            () => [imageUrl.value, boundZoom.value],
+            () => {
+                if (!isDragging.value) localZoom.value = null;
+            }
+        );
+        // Always capped: a ratio change may have lowered the cap under the stored zoom (the server caps it the same way)
+        const zoom = computed(() => clampZoom(localZoom.value ?? boundZoom.value, maxZoom.value));
+        const isZoomed = computed(() => zoom.value > 1);
+        const canInteract = computed(() => !isEditing.value && !isDisabled.value);
+        const canZoom = computed(() => zoomMode.value && canInteract.value && maxZoom.value > 1);
+
         /* ---------- Crop window ---------- */
-        // Share of the image the crop keeps: the largest box of the target ratio
+        // Share of the image the crop keeps: the largest box of the target ratio, divided by the zoom
         const cropSize = computed(() => {
-            const target = parseRatio(props.content?.ratio);
-            return imageRatio.value > target
-                ? { width: target / imageRatio.value, height: 1 }
-                : { width: 1, height: imageRatio.value / target };
+            const base = baseCropSize(imageRatio.value, targetRatio.value);
+            return { width: base.width / zoom.value, height: base.height / zoom.value };
         });
         const canMoveX = computed(() => cropSize.value.width < 0.9999);
         const canMoveY = computed(() => cropSize.value.height < 0.9999);
-        const canMove = computed(
-            () => !isEditing.value && !isDisabled.value && (canMoveX.value || canMoveY.value)
-        );
+        const canMove = computed(() => canInteract.value && (canMoveX.value || canMoveY.value));
 
         // Focus point = centre of the crop (0–1). The bound value, unless the user just moved it
         const boundFocus = computed(() => ({
@@ -175,7 +229,6 @@ export default {
             y: toFraction(props.content?.focusY) ?? 0.5,
         }));
         const localFocus = ref(null);
-        const isDragging = ref(false);
         // A new bound value (saved, reloaded, other image) takes over from the local one.
         // Keyed on primitives, so a re-evaluated binding with the same values changes nothing.
         watch(
@@ -188,14 +241,22 @@ export default {
 
         // Crop box position: kept as centred on the focus point as the image allows
         // (same rule as imgproxy's fp gravity)
-        const cropRect = computed(() => {
-            const { width, height } = cropSize.value;
-            return {
-                left: clamp(focus.value.x - width / 2, 0, 1 - width),
-                top: clamp(focus.value.y - height / 2, 0, 1 - height),
-                width,
-                height,
-            };
+        const cropRect = computed(() => cropRectFor(focus.value, cropSize.value));
+
+        /* ---------- Layout on screen (px, relative to the component) ---------- */
+        // Zoom mode: the fixed frame, and the image under it
+        const frameRect = computed(() =>
+            zoomMode.value
+                ? frameRectFor(available.value, Number(props.content?.framePadding ?? 16), targetRatio.value)
+                : null
+        );
+        const imageRect = computed(() => {
+            if (zoomMode.value) {
+                return frameRect.value
+                    ? imageRectFor(frameRect.value, imageRatio.value, zoom.value, cropRect.value)
+                    : null;
+            }
+            return boxSize.value ? { left: 0, top: 0, width: boxSize.value.width, height: boxSize.value.height } : null;
         });
 
         /* ---------- Internal variable ---------- */
@@ -204,6 +265,7 @@ export default {
             return {
                 focusX: round4(focus.value.x),
                 focusY: round4(focus.value.y),
+                zoom: zoom.value,
                 left: round4(rect.left),
                 top: round4(rect.top),
                 width: round4(rect.width),
@@ -226,12 +288,15 @@ export default {
             const trimmed = trimmedAxis ? 1 - rect[trimmedAxis] : 0;
             return {
                 focus: { x: round4(focus.value.x), y: round4(focus.value.y) },
+                zoom: zoom.value,
+                // Rounded down like the zoom itself, so it never reads higher than what is accepted
+                maxZoom: Math.floor(maxZoom.value * 10000) / 10000,
                 crop: variableValue.value,
                 output: size
                     ? { width: Math.round(size.width * rect.width), height: Math.round(size.height * rect.height) }
                     : null,
                 trim: { axis: trimmedAxis, percent: Math.round(trimmed * 100) },
-                ratio: round4(parseRatio(props.content?.ratio)),
+                ratio: round4(targetRatio.value),
                 isDragging: isDragging.value,
                 isLoaded: isLoaded.value,
             };
@@ -241,8 +306,11 @@ export default {
 #### focus
 Current focus point (centre of the crop), live while dragging: \`{ x, y }\`, 0–1.
 
+#### zoom / maxZoom
+Current zoom (1 = the largest box of the ratio, more = a tighter crop) and the largest zoom allowed by the minimum output size.
+
 #### crop
-Crop box as fractions of the image: \`{ focusX, focusY, left, top, width, height }\`.
+Crop box as fractions of the image: \`{ focusX, focusY, zoom, left, top, width, height }\`.
 
 #### output
 Size in px of the cropped original: \`{ width, height }\`, or \`null\` while the image size is unknown.
@@ -263,9 +331,17 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
         const emitChange = () => {
             emit('trigger-event', {
                 name: 'change',
-                event: { value: { x: round4(focus.value.x), y: round4(focus.value.y) } },
+                event: { value: { x: round4(focus.value.x), y: round4(focus.value.y), zoom: zoom.value } },
             });
         };
+
+        // One change event once the wheel / the keys stop, not one per tick
+        let settleTimer = null;
+        const emitChangeSoon = () => {
+            clearTimeout(settleTimer);
+            settleTimer = setTimeout(emitChange, 400);
+        };
+        onBeforeUnmount(() => clearTimeout(settleTimer));
 
         // Move the crop box to a new top-left corner (fractions), only along the axes that can move.
         // The other axis keeps its stored value, so a later ratio change still has it.
@@ -289,6 +365,15 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
                 ? { value: centred, isSnapped: true }
                 : { value: start, isSnapped: false };
         };
+        // Zoom mode: the guide lines go through the middle of the image, wherever it is on screen
+        const snapGuideStyle = computed(() => {
+            const rect = imageRect.value;
+            if (!zoomMode.value || !rect) return { x: null, y: null };
+            return {
+                x: { left: `${rect.left + rect.width / 2}px` },
+                y: { top: `${rect.top + rect.height / 2}px` },
+            };
+        });
 
         /* ---------- Drag ---------- */
         let drag = null;
@@ -298,7 +383,7 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
         };
         const onPointerDown = event => {
             if (!canMove.value || event.button !== 0) return;
-            const rect = box.value?.getBoundingClientRect?.();
+            const rect = imageRect.value;
             if (!rect?.width || !rect?.height) return;
             event.preventDefault();
             try {
@@ -312,8 +397,11 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
                 startY: event.clientY,
                 startLeft: cropRect.value.left,
                 startTop: cropRect.value.top,
+                // Image size on screen: converts pointer distance into a share of the image
                 width: rect.width,
                 height: rect.height,
+                // Classic: the window follows the pointer. Zoom mode: the image does, so the crop goes the other way
+                sign: zoomMode.value ? -1 : 1,
                 startFocus: { ...focus.value },
             };
             isDragging.value = true;
@@ -321,8 +409,16 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
         const onPointerMove = event => {
             if (!drag || event.pointerId !== drag.pointerId) return;
             const { width, height } = cropSize.value;
-            const left = snapStart(drag.startLeft + (event.clientX - drag.startX) / drag.width, width, drag.width);
-            const top = snapStart(drag.startTop + (event.clientY - drag.startY) / drag.height, height, drag.height);
+            const left = snapStart(
+                drag.startLeft + (drag.sign * (event.clientX - drag.startX)) / drag.width,
+                width,
+                drag.width
+            );
+            const top = snapStart(
+                drag.startTop + (drag.sign * (event.clientY - drag.startY)) / drag.height,
+                height,
+                drag.height
+            );
             snapped.value = {
                 x: canMoveX.value && left.isSnapped,
                 y: canMoveY.value && top.isSnapped,
@@ -345,22 +441,111 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
             if (moved) emitChange();
         };
 
+        /* ---------- Zoom gestures ---------- */
+        // Zoom around a point of the component (px, relative to it): the image point under it stays under it
+        const zoomAt = (nextZoomRaw, px, py) => {
+            const rect = imageRect.value;
+            const frame = frameRect.value;
+            if (!zoomMode.value || !rect || !frame) return false;
+            const nextZoom = clampZoom(nextZoomRaw, maxZoom.value);
+            if (nextZoom === zoom.value) return false;
+            const next = zoomAround({
+                frame,
+                imageRect: rect,
+                imageRatio: imageRatio.value,
+                ratio: targetRatio.value,
+                zoom: zoom.value,
+                nextZoom,
+                px,
+                py,
+            });
+            localFocus.value = { x: next.x ?? focus.value.x, y: next.y ?? focus.value.y };
+            localZoom.value = nextZoom;
+            return true;
+        };
+        const frameCenter = () => {
+            const frame = frameRect.value;
+            return frame ? { x: frame.left + frame.width / 2, y: frame.top + frame.height / 2 } : { x: 0, y: 0 };
+        };
+
+        // Wheel: ⌘ / Ctrl + wheel and the trackpad pinch (the browser sends it as ctrl + wheel) zoom around the pointer;
+        // a plain scroll (two fingers) moves the image once zoomed. Without a modifier and without a zoom,
+        // the page keeps scrolling.
+        const onWheel = event => {
+            if (!zoomMode.value || !canInteract.value) return;
+            const lines = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
+            const deltaX = (event.deltaX || 0) * lines;
+            const deltaY = (event.deltaY || 0) * lines;
+            const rect = box.value?.getBoundingClientRect?.();
+            if (!rect) return;
+            if (event.ctrlKey || event.metaKey) {
+                if (maxZoom.value <= 1) return;
+                event.preventDefault();
+                // A pinch sends small deltas, a wheel notch big ones
+                const speed = event.ctrlKey ? 0.01 : 0.004;
+                const changed = zoomAt(
+                    zoom.value * Math.exp(-deltaY * speed),
+                    event.clientX - rect.left,
+                    event.clientY - rect.top
+                );
+                if (changed) emitChangeSoon();
+            } else if (isZoomed.value && canMove.value) {
+                event.preventDefault();
+                const size = imageRect.value;
+                if (!size) return;
+                // Scrolling right shows what is on the right: the crop moves right
+                moveTo(cropRect.value.left + deltaX / size.width, cropRect.value.top + deltaY / size.height);
+                emitChangeSoon();
+            }
+        };
+        // The listener is added by hand: it must not be passive to be able to stop the page scrolling
+        watch(
+            box,
+            (element, previous) => {
+                previous?.removeEventListener?.('wheel', onWheel);
+                element?.addEventListener?.('wheel', onWheel, { passive: false });
+            },
+            { flush: 'post' }
+        );
+        onBeforeUnmount(() => box.value?.removeEventListener?.('wheel', onWheel));
+
         /* ---------- Actions ---------- */
-        // Set the focus point from a workflow; an empty coordinate keeps its current value
-        const setFocus = (x, y) => {
+        // Set the focus point (and the zoom) from a workflow; an empty value keeps its current one
+        const setFocus = (x, y, nextZoom) => {
             const next = { x: toFraction(x) ?? focus.value.x, y: toFraction(y) ?? focus.value.y };
-            if (round4(next.x) === round4(focus.value.x) && round4(next.y) === round4(focus.value.y)) return;
+            const targetZoom = isEmpty(nextZoom) ? zoom.value : clampZoom(Number(nextZoom), maxZoom.value);
+            if (
+                round4(next.x) === round4(focus.value.x) &&
+                round4(next.y) === round4(focus.value.y) &&
+                targetZoom === zoom.value
+            ) {
+                return;
+            }
             localFocus.value = next;
+            localZoom.value = targetZoom;
             emitChange();
         };
         const centerCrop = () => setFocus(0.5, 0.5);
+        const resetZoom = () => setFocus(0.5, 0.5, 1);
+        // Double-click: zoom mode goes back to the whole image, classic mode just centres
         const onDoubleClick = () => {
-            if (canMove.value) centerCrop();
+            if (zoomMode.value) {
+                if (canInteract.value) resetZoom();
+            } else if (canMove.value) {
+                centerCrop();
+            }
         };
 
         /* ---------- Keyboard (when focused with Tab) ---------- */
-        let keyTimer = null;
         const onKeyDown = event => {
+            const zoomKey = { '+': 1.1, '=': 1.1, '-': 1 / 1.1, _: 1 / 1.1 }[event.key];
+            if (zoomKey && canZoom.value && !event.metaKey && !event.ctrlKey) {
+                event.preventDefault();
+                event.stopPropagation();
+                const center = frameCenter();
+                if (zoomAt(zoom.value * zoomKey, center.x, center.y)) emitChangeSoon();
+                return;
+            }
             if (!canMove.value) return;
             const step = event.shiftKey ? 0.1 : 0.01;
             const { left, top } = cropRect.value;
@@ -375,22 +560,23 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
             event.preventDefault();
             event.stopPropagation();
             moveTo(...moves[event.key]);
-            // One change event once the keys stop, not one per press
-            clearTimeout(keyTimer);
-            keyTimer = setTimeout(emitChange, 400);
+            emitChangeSoon();
         };
-        onBeforeUnmount(() => clearTimeout(keyTimer));
 
         /* ---------- Overlay ---------- */
         const overlayType = computed(() => props.content?.overlay ?? 'thirds');
-        const windowPx = computed(() =>
-            boxSize.value
+        // Size of the crop window on screen
+        const windowPx = computed(() => {
+            if (zoomMode.value) {
+                return frameRect.value ? { width: frameRect.value.width, height: frameRect.value.height } : null;
+            }
+            return boxSize.value
                 ? {
                       width: boxSize.value.width * cropRect.value.width,
                       height: boxSize.value.height * cropRect.value.height,
                   }
-                : null
-        );
+                : null;
+        });
         const overlayD = computed(() =>
             windowPx.value
                 ? overlayPath(overlayType.value, windowPx.value.width, windowPx.value.height, {
@@ -406,20 +592,46 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
         const isStraightOverlay = computed(() => STRAIGHT_OVERLAYS.includes(overlayType.value));
 
         /* ---------- Styles (runtime values; colors come from the css() hook) ---------- */
-        const boxStyle = computed(() =>
-            boxSize.value
+        const boxStyle = computed(() => {
+            // Zoom mode: the box is the whole component, the frame and the image are placed inside it
+            if (zoomMode.value) return { width: '100%', height: '100%' };
+            return boxSize.value
                 ? { width: `${boxSize.value.width}px`, height: `${boxSize.value.height}px` }
-                : { width: '100%', aspectRatio: String(imageRatio.value) }
-        );
+                : { width: '100%', aspectRatio: String(imageRatio.value) };
+        });
+        const imageStyle = computed(() => {
+            const rect = imageRect.value;
+            if (!zoomMode.value || !rect) return null;
+            return {
+                left: `${rect.left}px`,
+                top: `${rect.top}px`,
+                width: `${rect.width}px`,
+                height: `${rect.height}px`,
+                right: 'auto',
+                bottom: 'auto',
+            };
+        });
         const windowStyle = computed(() => {
-            const rect = cropRect.value;
             const darken = clamp(Number(props.content?.darken ?? 45) || 0, 0, 100) / 100;
             const overlayOpacity = clamp(Number(props.content?.overlayOpacity ?? 40) || 0, 0, 100) / 100;
+            const rect = cropRect.value;
+            const frame = frameRect.value;
+            const place =
+                zoomMode.value && frame
+                    ? {
+                          left: `${frame.left}px`,
+                          top: `${frame.top}px`,
+                          width: `${frame.width}px`,
+                          height: `${frame.height}px`,
+                      }
+                    : {
+                          left: `${rect.left * 100}%`,
+                          top: `${rect.top * 100}%`,
+                          width: `${rect.width * 100}%`,
+                          height: `${rect.height * 100}%`,
+                      };
             return {
-                left: `${rect.left * 100}%`,
-                top: `${rect.top * 100}%`,
-                width: `${rect.width * 100}%`,
-                height: `${rect.height * 100}%`,
+                ...place,
                 // Darken everything outside the crop: a huge shadow clipped by the box
                 boxShadow: `0 0 0 9999px rgba(0, 0, 0, ${darken})`,
                 '--icf-overlay-opacity': overlayOpacity,
@@ -431,6 +643,11 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
             () => props.content?.ariaLabel?.trim() || props.wwElementState?.name || 'Crop area'
         );
         const helpId = computed(() => `image-crop-frame-help-${props.uid}`);
+        const helpText = computed(() =>
+            zoomMode.value
+                ? 'Drag, or use the arrow keys (Shift for bigger steps), to move the image under the crop. Press plus or minus to zoom, or pinch / hold Command and scroll. Double-click to show the whole image.'
+                : 'Drag, or use the arrow keys (Shift for bigger steps), to move the crop. Double-click to centre it.'
+        );
 
         return {
             root,
@@ -440,8 +657,12 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
             isLoaded,
             onImageLoad,
             canMove,
+            canZoom,
+            zoomMode,
+            isZoomed,
             isDragging,
             snapped,
+            snapGuideStyle,
             onMouseDown,
             onPointerDown,
             onPointerMove,
@@ -452,12 +673,15 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
             overlayViewBox,
             isStraightOverlay,
             boxStyle,
+            imageStyle,
             windowStyle,
             accessibleName,
             helpId,
+            helpText,
             // Actions (ww-config `actions`)
             setFocus,
             centerCrop,
+            resetZoom,
         };
     },
 };
@@ -504,6 +728,12 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
     }
 }
 
+// Zoom mode: the image is placed in px (exact ratio), whatever its natural size
+.is-zoom .image-crop-frame__image {
+    object-fit: fill;
+    max-width: none;
+}
+
 .image-crop-frame__window {
     position: absolute;
     box-sizing: border-box;
@@ -511,6 +741,10 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
     transition: left 150ms ease, top 150ms ease, width 150ms ease, height 150ms ease;
 
     .is-dragging & {
+        transition: none;
+    }
+    // The frame never moves in zoom mode, only the image does: a transition would only lag behind it
+    .is-zoom & {
         transition: none;
     }
     &:focus-visible {

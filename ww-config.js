@@ -10,6 +10,10 @@ export default {
             ['imageWidth', 'imageHeight'],
             'ratio',
             ['focusX', 'focusY'],
+            'zoomEnabled',
+            'zoom',
+            ['minOutputWidth', 'minOutputHeight'],
+            'framePadding',
             ['snapToCenter', 'snapDistance'],
             'darken',
             ['overlay', 'gridDivisions', 'overlayFlipH', 'overlayFlipV', 'overlayOpacity'],
@@ -29,6 +33,7 @@ export default {
     states: [
         { label: 'dragging', selector: '&[data-dragging="true"]' },
         { label: 'disabled', selector: '&[aria-disabled="true"]' },
+        { label: 'zoomed', selector: '&[data-zoomed="true"]' },
     ],
     staticRendering: true,
     options: { displayAllowedValues: ['flex', 'inline-flex'] },
@@ -37,18 +42,20 @@ export default {
         {
             name: 'change',
             label: { en: 'On crop change' },
-            event: { value: { x: 0.5, y: 0.5 } },
+            event: { value: { x: 0.5, y: 0.5, zoom: 1 } },
             default: true,
         },
     ],
     actions: [
         { label: { en: 'Center crop' }, action: 'centerCrop' },
+        { label: { en: 'Reset zoom' }, action: 'resetZoom' },
         {
             label: { en: 'Set focus point' },
             action: 'setFocus',
             args: [
                 { name: 'x', type: 'number', label: { en: 'X (0–1, empty = keep)' } },
                 { name: 'y', type: 'number', label: { en: 'Y (0–1, empty = keep)' } },
+                { name: 'zoom', type: 'number', label: { en: 'Zoom (1 or more, empty = keep)' } },
             ],
         },
     ],
@@ -164,6 +171,79 @@ export default {
                 tooltip: 'Vertical centre of the crop, 0 (top) to 1 (bottom). Empty = 0.5.',
             },
             propertyHelp: { tooltip: 'Saved vertical focus point.' },
+            /* wwEditor:end */
+        },
+        zoomEnabled: {
+            label: { en: 'Zoom' },
+            type: 'OnOff',
+            section: 'settings',
+            bindable: true,
+            defaultValue: false,
+            /* wwEditor:start */
+            bindingValidation: { type: 'boolean', tooltip: 'true to let the user zoom and move the image under a fixed crop frame' },
+            propertyHelp: {
+                tooltip: 'Off: the crop window moves over the image (a saved zoom is still shown). On: the frame stays put and the image moves and zooms under it, like the iOS crop. Zoom with Cmd / Ctrl + scroll or a trackpad pinch, plus / minus keys; double-click shows the whole image.',
+            },
+            /* wwEditor:end */
+        },
+        zoom: {
+            label: { en: 'Zoom' },
+            type: 'Number',
+            section: 'settings',
+            options: { min: 1, step: 0.05 },
+            bindable: true,
+            defaultValue: null,
+            /* wwEditor:start */
+            bindingValidation: {
+                type: 'number',
+                tooltip: '1 or more. Empty = 1 (the largest box of the ratio). Capped by the minimum output size.',
+            },
+            propertyHelp: {
+                tooltip: 'Saved zoom. The crop box is the largest box of the ratio divided by this. Bind to the saved value; it is always shown, even with Zoom off.',
+            },
+            /* wwEditor:end */
+        },
+        minOutputWidth: {
+            label: { en: 'Min output width (px)' },
+            type: 'Number',
+            section: 'settings',
+            options: { min: 0, step: 10, noRange: true },
+            bindable: true,
+            defaultValue: 1080,
+            hidden: content => !content?.zoomEnabled,
+            /* wwEditor:start */
+            bindingValidation: { type: 'number', tooltip: 'Smallest width of the exported crop, in px. 0 = not checked.' },
+            propertyHelp: {
+                tooltip: 'Limits the zoom so the exported crop keeps at least this width (needs the image size). Keep it equal to the backend value, which makes the final call.',
+            },
+            /* wwEditor:end */
+        },
+        minOutputHeight: {
+            label: { en: 'Min output height (px)' },
+            type: 'Number',
+            section: 'settings',
+            options: { min: 0, step: 10, noRange: true },
+            bindable: true,
+            defaultValue: 0,
+            hidden: content => !content?.zoomEnabled,
+            /* wwEditor:start */
+            bindingValidation: { type: 'number', tooltip: 'Smallest height of the exported crop, in px. 0 = not checked.' },
+            propertyHelp: {
+                tooltip: 'Same for the height, for landscape exports where it matters. 0 = not checked. The stricter of the two limits applies.',
+            },
+            /* wwEditor:end */
+        },
+        framePadding: {
+            label: { en: 'Frame margin (px)' },
+            type: 'Number',
+            section: 'settings',
+            options: { min: 0, max: 200, step: 1 },
+            bindable: true,
+            defaultValue: 16,
+            hidden: content => !content?.zoomEnabled,
+            /* wwEditor:start */
+            bindingValidation: { type: 'number', tooltip: 'Space kept around the crop frame, in px' },
+            propertyHelp: { tooltip: 'Space between the crop frame and the edges of the element, where the darkened image shows.' },
             /* wwEditor:end */
         },
         snapToCenter: {
