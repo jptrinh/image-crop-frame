@@ -174,7 +174,7 @@ export default {
             /* wwEditor:end */
         },
         zoomEnabled: {
-            label: { en: 'Zoom' },
+            label: { en: 'Zoom mode' },
             type: 'OnOff',
             section: 'settings',
             bindable: true,
@@ -187,10 +187,10 @@ export default {
             /* wwEditor:end */
         },
         zoom: {
-            label: { en: 'Zoom' },
+            label: { en: 'Zoom level' },
             type: 'Number',
             section: 'settings',
-            options: { min: 1, step: 0.05 },
+            options: { min: 1, step: 0.05, noRange: true },
             bindable: true,
             defaultValue: null,
             /* wwEditor:start */
