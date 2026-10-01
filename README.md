@@ -14,7 +14,10 @@ is the largest box of the ratio divided by the zoom (`crop:w:h:fp:x:y` at the or
 - Bind `imageUrl`, `imageWidth` / `imageHeight` (the original's size), `ratio`, and
   `focusX` / `focusY` (the saved point).
 - On **On crop change**, save `event.value.x` / `event.value.y` / `event.value.zoom`. In a `js` formula the event
-  is `event`, not `context.event`.
+  is `event`, not `context.event`. The event fires once the crop has been still for **Change delay** ms (500): a
+  burst of drags, scrolls or key presses makes one save. A change still waiting when the image changes is dropped.
+  Saves can still overlap (a slow endpoint): the component ignores a bound value equal to an older change event,
+  so the late answer of an earlier save never pulls the crop back.
 - Move: drag (only the axis the ratio leaves free), arrow keys once focused with Tab (Shift =
   10%), double-click to centre. A mouse drag does not take focus, so page shortcuts on the arrow
   keys keep working.

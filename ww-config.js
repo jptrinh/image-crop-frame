@@ -10,6 +10,7 @@ export default {
             ['imageWidth', 'imageHeight'],
             'ratio',
             ['focusX', 'focusY'],
+            'changeDelay',
             'zoomEnabled',
             'zoom',
             ['minOutputWidth', 'minOutputHeight'],
@@ -171,6 +172,20 @@ export default {
                 tooltip: 'Vertical centre of the crop, 0 (top) to 1 (bottom). Empty = 0.5.',
             },
             propertyHelp: { tooltip: 'Saved vertical focus point.' },
+            /* wwEditor:end */
+        },
+        changeDelay: {
+            label: { en: 'Change delay (ms)' },
+            type: 'Number',
+            section: 'settings',
+            options: { min: 0, max: 5000, step: 50, noRange: true },
+            bindable: true,
+            defaultValue: 500,
+            /* wwEditor:start */
+            bindingValidation: { type: 'number', tooltip: 'Milliseconds the crop must stay still before On crop change fires. 0 = right away.' },
+            propertyHelp: {
+                tooltip: 'On crop change fires once the crop has been still for this long (drag, scroll, keys, double-click alike), so a burst of moves makes one save. A change still waiting when the image changes is dropped.',
+            },
             /* wwEditor:end */
         },
         zoomEnabled: {

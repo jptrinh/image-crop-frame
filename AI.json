@@ -87,6 +87,12 @@
             "defaultValue": null
         },
         {
+            "name": "changeDelay",
+            "description": "Milliseconds the crop must stay still before the change event fires (drag released, wheel, keys, double-click, actions alike): a burst of moves makes one save. 0 = right away. A change still waiting when imageUrl changes is dropped (it belonged to the previous image).",
+            "type": "number",
+            "defaultValue": 500
+        },
+        {
             "name": "zoomEnabled",
             "description": "Zoom mode: the crop frame is fixed and the user moves and zooms the image under it (Cmd / Ctrl + scroll, trackpad pinch, plus / minus keys; double-click shows the whole image). Off = the original behaviour (the crop window moves over the image). A saved zoom is shown either way.",
             "type": "boolean",
@@ -222,7 +228,7 @@
     "events": [
         {
             "name": "change",
-            "description": "The crop changed: drag released, wheel / arrow / zoom keys stopped for 400 ms, double-click, or an action. Save event.value there (in a js formula the event is `event`, not `context.event`).",
+            "description": "The crop changed and has been still for changeDelay ms (500 by default): drag released, wheel, arrow / zoom keys, double-click, or an action. Save event.value there (in a js formula the event is `event`, not `context.event`).",
             "payload": {
                 "value": {
                     "x": "number, new horizontal focus point (0–1, 4 decimals)",
@@ -286,7 +292,7 @@
     "specifications": [
         "The element needs a height (and width): the image is fitted inside it, centred.",
         "Crop box = largest box of `ratio` inside the image divided by `zoom`, as centred on (focusX, focusY) as the image allows. Moving only changes the axes that are free; the other keeps its stored value.",
-        "Bind focusX / focusY to the stored point and save on the change event; after a change the component keeps showing its own position until the bound values change, so an optimistic update avoids any jump.",
+        "Bind focusX / focusY / zoom to the stored crop and save on the change event; after a change the component keeps showing its own crop until the bound values change, so an optimistic update avoids any jump. While a change is waiting (changeDelay) or being dragged, bound changes are ignored; a bound value equal to an older change event (the late answer of an earlier save) is ignored too, only the latest one or a new value takes over.",
         "Moving is disabled in the editor's edit mode (selection keeps working).",
         "The golden spiral and triangle are stretched to the crop window, like in photo editors; flip them to match the subject.",
         "Zoom mode needs imageWidth / imageHeight (or a loaded image) to cap the zoom; until the size is known only a hard cap of 8× applies. The cap must match the backend's, which makes the final call.",

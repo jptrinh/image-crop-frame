@@ -204,12 +204,10 @@ export default {
         });
         const localZoom = ref(null);
         const isDragging = ref(false);
-        watch(
-            () => [imageUrl.value, boundZoom.value],
-            () => {
-                if (!isDragging.value) localZoom.value = null;
-            }
-        );
+        // A change waiting for the "change" event (see changeDelay), and the values already sent, newest last
+        const isSettling = ref(false);
+        let settleTimer = null;
+        let sentValues = [];
         // Always capped: a ratio change may have lowered the cap under the stored zoom (the server caps it the same way)
         const zoom = computed(() => clampZoom(localZoom.value ?? boundZoom.value, maxZoom.value));
         const isZoomed = computed(() => zoom.value > 1);
@@ -232,12 +230,38 @@ export default {
             y: toFraction(props.content?.focusY) ?? 0.5,
         }));
         const localFocus = ref(null);
-        // A new bound value (saved, reloaded, other image) takes over from the local one.
+        // Same crop, give or take the rounding done on the way (4 decimals)
+        const sameCrop = (a, b) =>
+            Math.abs(a.x - b.x) < 0.0002 && Math.abs(a.y - b.y) < 0.0002 && Math.abs(a.zoom - b.zoom) < 0.0002;
+        // A new bound value (saved, reloaded, other image) takes over from the local one, except:
+        // - while the user is still at it (dragging, or a change waiting to be sent): their value wins, the next
+        //   change event saves it;
+        // - when it is the late echo of an earlier change event: several saves can be on their way at once, and the
+        //   answer to an older one must not pull the crop back.
         // Keyed on primitives, so a re-evaluated binding with the same values changes nothing.
         watch(
-            () => [imageUrl.value, toFraction(props.content?.focusX), toFraction(props.content?.focusY)],
-            () => {
-                if (!isDragging.value) localFocus.value = null;
+            () => [imageUrl.value, toFraction(props.content?.focusX), toFraction(props.content?.focusY), boundZoom.value],
+            ([url, x, y, z], [previousUrl]) => {
+                if (url !== previousUrl) {
+                    // Another image: a change still waiting belonged to the previous one, it is dropped
+                    clearTimeout(settleTimer);
+                    isSettling.value = false;
+                    sentValues = [];
+                } else {
+                    if (isDragging.value || isSettling.value) return;
+                    const bound = { x, y, zoom: z };
+                    const latest = sentValues[sentValues.length - 1];
+                    const isLateEcho =
+                        latest && !sameCrop(bound, latest) && sentValues.some(sent => sameCrop(bound, sent));
+                    if (isLateEcho) {
+                        // Keep showing the latest change (the local value may already have given way to it)
+                        localFocus.value = { x: latest.x, y: latest.y };
+                        localZoom.value = latest.zoom;
+                        return;
+                    }
+                }
+                localFocus.value = null;
+                localZoom.value = null;
             }
         );
         const focus = computed(() => localFocus.value ?? boundFocus.value);
@@ -332,17 +356,22 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
         wwLib.wwElement.useRegisterElementLocalContext('imageCropFrame', localData, {}, markdown);
 
         const emitChange = () => {
-            emit('trigger-event', {
-                name: 'change',
-                event: { value: { x: round4(focus.value.x), y: round4(focus.value.y), zoom: zoom.value } },
-            });
+            clearTimeout(settleTimer);
+            isSettling.value = false;
+            const value = { x: round4(focus.value.x), y: round4(focus.value.y), zoom: zoom.value };
+            sentValues = [...sentValues.slice(-19), value];
+            emit('trigger-event', { name: 'change', event: { value } });
         };
 
-        // One change event once the wheel / the keys stop, not one per tick
-        let settleTimer = null;
+        // One change event once the crop has been still for changeDelay ms, not one per drag, wheel tick or key
+        const changeDelay = computed(() => {
+            const ms = Number(props.content?.changeDelay ?? 500);
+            return Number.isFinite(ms) ? clamp(ms, 0, 5000) : 500;
+        });
         const emitChangeSoon = () => {
             clearTimeout(settleTimer);
-            settleTimer = setTimeout(emitChange, 400);
+            isSettling.value = true;
+            settleTimer = setTimeout(emitChange, changeDelay.value);
         };
         onBeforeUnmount(() => clearTimeout(settleTimer));
 
@@ -441,7 +470,7 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
             drag = null;
             isDragging.value = false;
             snapped.value = { x: false, y: false };
-            if (moved) emitChange();
+            if (moved) emitChangeSoon();
         };
 
         /* ---------- Zoom gestures ---------- */
@@ -533,7 +562,7 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
             }
             localFocus.value = next;
             localZoom.value = targetZoom;
-            emitChange();
+            emitChangeSoon();
         };
         const centerCrop = () => setFocus(0.5, 0.5);
         const resetZoom = () => setFocus(0.5, 0.5, 1);
