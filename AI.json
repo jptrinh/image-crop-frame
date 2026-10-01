@@ -30,10 +30,9 @@
             "Actions: center crop, set focus point",
             "States: dragging, disabled",
             "Optional zoom mode (property zoomEnabled): fixed crop frame, the image moves and scales under it, the rest of the image shown darkened",
-            "Zoom with Cmd / Ctrl + scroll or a trackpad pinch (around the pointer), plus / minus keys; a plain scroll moves the image once zoomed; double-click shows the whole image",
+            "Zoom with Cmd / Ctrl + scroll or a trackpad pinch (around the pointer; Safari's gesture events too), a two-finger pinch on a touch screen (around the fingers, which also move the image; lifting one finger keeps dragging with the other), plus / minus keys; a plain scroll moves the image once zoomed; double-click shows the whole image",
             "Zoom is capped so the exported crop keeps a minimum width / height in px (minOutputWidth, minOutputHeight)",
-            "A saved zoom is always shown, even with zoomEnabled off (the window just gets smaller)",
-            "Not handled yet: two-finger pinch on touch screens"
+            "A saved zoom is always shown, even with zoomEnabled off (the window just gets smaller)"
         ],
         "inherit": []
     },
@@ -94,7 +93,7 @@
         },
         {
             "name": "zoomEnabled",
-            "description": "Zoom mode: the crop frame is fixed and the user moves and zooms the image under it (Cmd / Ctrl + scroll, trackpad pinch, plus / minus keys; double-click shows the whole image). Off = the original behaviour (the crop window moves over the image). A saved zoom is shown either way.",
+            "description": "Zoom mode: the crop frame is fixed and the user moves and zooms the image under it (Cmd / Ctrl + scroll, trackpad pinch, two-finger pinch on touch screens, plus / minus keys; double-click shows the whole image). Off = the original behaviour (the crop window moves over the image). A saved zoom is shown either way.",
             "type": "boolean",
             "defaultValue": false
         },

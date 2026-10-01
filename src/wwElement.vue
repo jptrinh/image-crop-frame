@@ -10,7 +10,7 @@
             v-if="imageUrl"
             ref="box"
             class="image-crop-frame__box"
-            :class="{ 'is-movable': canMove, 'is-dragging': isDragging, 'is-zoom': zoomMode }"
+            :class="{ 'is-movable': canMove, 'is-dragging': isDragging, 'is-zoom': zoomMode, 'can-zoom': canZoom }"
             :style="boxStyle"
             @pointerdown="onPointerDown"
             @pointermove="onPointerMove"
@@ -407,26 +407,39 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
             };
         });
 
-        /* ---------- Drag ---------- */
+        /* ---------- Drag (mouse, pen, one finger) and pinch (two fingers) ---------- */
         let drag = null;
+        // Two-finger pinch on a touch screen: last distance between the fingers and their midpoint (client px)
+        let pinch = null;
+        // Touch pointers currently down on the box: pointerId → { x, y } (client px)
+        const touches = new Map();
+        // Something changed during the current drag / pinch: one change event at the end
+        let gestureChanged = false;
         const onMouseDown = event => {
             // Don't let a mouse drag focus the crop: arrow keys keep doing what the page wants
             if (canMove.value) event.preventDefault();
         };
-        const onPointerDown = event => {
-            if (!canMove.value || event.button !== 0) return;
-            const rect = imageRect.value;
-            if (!rect?.width || !rect?.height) return;
-            event.preventDefault();
+        const capture = pointerId => {
             try {
-                box.value?.setPointerCapture?.(event.pointerId);
+                box.value?.setPointerCapture?.(pointerId);
             } catch (e) {
-                // Pointer already released: the drag still works while the pointer stays over the image
+                // Pointer already released: the gesture still works while the pointer stays over the image
             }
+        };
+        const release = pointerId => {
+            try {
+                box.value?.releasePointerCapture?.(pointerId);
+            } catch (e) {
+                // Nothing to release
+            }
+        };
+        const beginDrag = (pointerId, clientX, clientY) => {
+            const rect = imageRect.value;
+            if (!canMove.value || !rect?.width || !rect?.height) return false;
             drag = {
-                pointerId: event.pointerId,
-                startX: event.clientX,
-                startY: event.clientY,
+                pointerId,
+                startX: clientX,
+                startY: clientY,
                 startLeft: cropRect.value.left,
                 startTop: cropRect.value.top,
                 // Image size on screen: converts pointer distance into a share of the image
@@ -434,11 +447,67 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
                 height: rect.height,
                 // Classic: the window follows the pointer. Zoom mode: the image does, so the crop goes the other way
                 sign: zoomMode.value ? -1 : 1,
-                startFocus: { ...focus.value },
             };
             isDragging.value = true;
+            return true;
+        };
+        const pinchPoints = () => {
+            const [a, b] = [...touches.values()];
+            return { distance: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        };
+        const endGesture = () => {
+            drag = null;
+            pinch = null;
+            isDragging.value = false;
+            snapped.value = { x: false, y: false };
+            if (gestureChanged) emitChangeSoon();
+            gestureChanged = false;
+        };
+        const onPointerDown = event => {
+            if (event.button !== 0) return;
+            if (event.pointerType === 'touch') {
+                touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+                if (pinch || touches.size > 2) return;
+                // A second finger: the drag becomes a pinch (zoom mode only)
+                if (touches.size === 2) {
+                    if (!canZoom.value) return;
+                    event.preventDefault();
+                    capture(event.pointerId);
+                    drag = null;
+                    snapped.value = { x: false, y: false };
+                    pinch = pinchPoints();
+                    isDragging.value = true;
+                    return;
+                }
+            }
+            if (!beginDrag(event.pointerId, event.clientX, event.clientY)) return;
+            event.preventDefault();
+            capture(event.pointerId);
+        };
+        const onPinchMove = () => {
+            const next = pinchPoints();
+            const rect = box.value?.getBoundingClientRect?.();
+            if (!rect) return;
+            // Zoom around where the fingers were, then follow them: the image point under the fingers stays under them
+            if (pinch.distance > 0 && next.distance > 0) {
+                if (zoomAt((zoom.value * next.distance) / pinch.distance, pinch.x - rect.left, pinch.y - rect.top)) {
+                    gestureChanged = true;
+                }
+            }
+            const size = imageRect.value;
+            if (size?.width && size?.height && (next.x !== pinch.x || next.y !== pinch.y)) {
+                const before = { ...focus.value };
+                moveTo(cropRect.value.left - (next.x - pinch.x) / size.width, cropRect.value.top - (next.y - pinch.y) / size.height);
+                if (focus.value.x !== before.x || focus.value.y !== before.y) gestureChanged = true;
+            }
+            pinch = next;
         };
         const onPointerMove = event => {
+            if (touches.has(event.pointerId)) touches.set(event.pointerId, { x: event.clientX, y: event.clientY });
+            if (pinch) {
+                if (touches.size >= 2) onPinchMove();
+                return;
+            }
             if (!drag || event.pointerId !== drag.pointerId) return;
             const { width, height } = cropSize.value;
             const left = snapStart(
@@ -455,22 +524,30 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
                 x: canMoveX.value && left.isSnapped,
                 y: canMoveY.value && top.isSnapped,
             };
+            const before = { ...focus.value };
             moveTo(left.value, top.value);
+            if (focus.value.x !== before.x || focus.value.y !== before.y) gestureChanged = true;
         };
         const onPointerUp = event => {
-            if (!drag || event.pointerId !== drag.pointerId) return;
-            try {
-                box.value?.releasePointerCapture?.(event.pointerId);
-            } catch (e) {
-                // Nothing to release
+            const wasTouch = touches.delete(event.pointerId);
+            if (pinch) {
+                if (!wasTouch) return;
+                release(event.pointerId);
+                // A third finger lifted: keep pinching with the other two
+                if (touches.size >= 2) {
+                    pinch = pinchPoints();
+                    return;
+                }
+                pinch = null;
+                // One finger left: it goes on dragging from where it is
+                const [rest] = [...touches.entries()];
+                if (rest && beginDrag(rest[0], rest[1].x, rest[1].y)) return;
+                endGesture();
+                return;
             }
-            const moved =
-                round4(focus.value.x) !== round4(drag.startFocus.x) ||
-                round4(focus.value.y) !== round4(drag.startFocus.y);
-            drag = null;
-            isDragging.value = false;
-            snapped.value = { x: false, y: false };
-            if (moved) emitChangeSoon();
+            if (!drag || event.pointerId !== drag.pointerId) return;
+            release(event.pointerId);
+            endGesture();
         };
 
         /* ---------- Zoom gestures ---------- */
@@ -500,6 +577,34 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
             return frame ? { x: frame.left + frame.width / 2, y: frame.top + frame.height / 2 } : { x: 0, y: 0 };
         };
 
+        // Safari (WebKit) sends a trackpad pinch on macOS as gesture events with a scale, not as ctrl + wheel. On iOS it sends
+        // them too, next to the touch pointers: there the two-finger pinch above already zooms, so these are only swallowed.
+        let safariGesture = null;
+        const onGestureStart = event => {
+            if (!zoomMode.value || !canInteract.value) return;
+            // Otherwise Safari zooms the page
+            event.preventDefault();
+            safariGesture = { scale: 1 };
+        };
+        const onGestureChange = event => {
+            if (!safariGesture) return;
+            event.preventDefault();
+            const scale = Number(event.scale);
+            if (pinch || touches.size || drag || !canZoom.value || !(scale > 0)) return;
+            const rect = box.value?.getBoundingClientRect?.();
+            if (!rect) return;
+            const center = frameCenter();
+            const px = Number.isFinite(event.clientX) ? event.clientX - rect.left : center.x;
+            const py = Number.isFinite(event.clientY) ? event.clientY - rect.top : center.y;
+            if (zoomAt((zoom.value * scale) / safariGesture.scale, px, py)) emitChangeSoon();
+            safariGesture.scale = scale;
+        };
+        const onGestureEnd = event => {
+            if (!safariGesture) return;
+            event.preventDefault();
+            safariGesture = null;
+        };
+
         // Wheel: ⌘ / Ctrl + wheel and the trackpad pinch (the browser sends it as ctrl + wheel) zoom around the pointer;
         // a plain scroll (two fingers) moves the image once zoomed. Without a modifier and without a zoom,
         // a vertical scroll still scrolls the page.
@@ -517,7 +622,7 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
                 // Always swallowed over the frame, even when the zoom can't change: otherwise the browser zooms the page
                 event.preventDefault();
                 // Not while dragging: the drag measures from where it started, a size change would make it jump
-                if (drag || maxZoom.value <= 1) return;
+                if (drag || pinch || safariGesture || maxZoom.value <= 1) return;
                 const step = clamp(deltaY, -MAX_WHEEL_DELTA, MAX_WHEEL_DELTA);
                 const changed = zoomAt(
                     zoom.value * Math.exp(-step * 0.01),
@@ -528,7 +633,7 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
             } else if (isZoomed.value && canMove.value) {
                 event.preventDefault();
                 const size = imageRect.value;
-                if (drag || !size) return;
+                if (drag || pinch || !size) return;
                 // Scrolling right shows what is on the right: the crop moves right
                 moveTo(cropRect.value.left + deltaX / size.width, cropRect.value.top + deltaY / size.height);
                 emitChangeSoon();
@@ -537,16 +642,26 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
                 event.preventDefault();
             }
         };
-        // The listener is added by hand: it must not be passive to be able to stop the page scrolling
+        // The listeners are added by hand: they must not be passive to be able to stop the page scrolling / zooming
+        const nativeListeners = [
+            ['wheel', onWheel],
+            ['gesturestart', onGestureStart],
+            ['gesturechange', onGestureChange],
+            ['gestureend', onGestureEnd],
+        ];
         watch(
             box,
             (element, previous) => {
-                previous?.removeEventListener?.('wheel', onWheel);
-                element?.addEventListener?.('wheel', onWheel, { passive: false });
+                for (const [type, listener] of nativeListeners) {
+                    previous?.removeEventListener?.(type, listener);
+                    element?.addEventListener?.(type, listener, { passive: false });
+                }
             },
             { flush: 'post' }
         );
-        onBeforeUnmount(() => box.value?.removeEventListener?.('wheel', onWheel));
+        onBeforeUnmount(() => {
+            for (const [type, listener] of nativeListeners) box.value?.removeEventListener?.(type, listener);
+        });
 
         /* ---------- Actions ---------- */
         // Set the focus point (and the zoom) from a workflow; an empty value keeps its current one
@@ -776,6 +891,10 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
 
     &.is-movable {
         cursor: grab;
+        touch-action: none;
+    }
+    // Zoomable but not movable (zoom 1, crop = whole image): a pinch must still reach the component, not zoom the page
+    &.can-zoom {
         touch-action: none;
     }
     &.is-dragging {

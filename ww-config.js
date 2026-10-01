@@ -197,7 +197,7 @@ export default {
             /* wwEditor:start */
             bindingValidation: { type: 'boolean', tooltip: 'true to let the user zoom and move the image under a fixed crop frame' },
             propertyHelp: {
-                tooltip: 'Off: the crop window moves over the image (a saved zoom is still shown). On: the frame stays put and the image moves and zooms under it, like the iOS crop. Zoom with Cmd / Ctrl + scroll or a trackpad pinch, plus / minus keys; double-click shows the whole image.',
+                tooltip: 'Off: the crop window moves over the image (a saved zoom is still shown). On: the frame stays put and the image moves and zooms under it, like the iOS crop. Zoom with Cmd / Ctrl + scroll, a trackpad pinch (Safari too), a two-finger pinch on a touch screen, plus / minus keys; double-click shows the whole image.',
             },
             /* wwEditor:end */
         },

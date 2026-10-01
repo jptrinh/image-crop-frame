@@ -26,12 +26,12 @@ is the largest box of the ratio divided by the zoom (`crop:w:h:fp:x:y` at the or
 - **Zoom** (property `zoomEnabled`, off by default): the frame stays put and the image moves and scales under
   it, like the iOS crop (the rest of the image shows darkened, `Frame margin` px around the frame). Bind `zoom` to
   the saved value, and `minOutputWidth` / `minOutputHeight` to the limits the backend uses (the app gets them from
-  its image list endpoint), so the gesture stops where the server would cap it. Zoom with Cmd / Ctrl + scroll or a trackpad pinch (around the pointer), `+` / `-` keys once focused;
+  its image list endpoint), so the gesture stops where the server would cap it. Zoom with Cmd / Ctrl + scroll or a trackpad pinch (around the pointer; in Safari the pinch arrives as gesture events, handled too), a two-finger pinch on a touch screen (around the fingers, which also move the image; lift one finger and the other keeps dragging), `+` / `-` keys once focused;
   a plain scroll moves the image once zoomed; drag moves it; double-click shows the whole image. The zoom is capped
   so the exported crop keeps `Min output width` px (1080) and, if set, `Min output height` px (0 = not checked): the
   same formula as the backend, `maxZoom = max(1, min(boxW / minW, boxH / minH))` with `boxW = min(imgW, imgH × ratio)`.
-  A saved zoom is shown even with Zoom off (the crop window just gets smaller). Not handled yet: two-finger pinch on
-  touch screens. Geometry is in `src/zoomMath.js` (pure functions).
+  A saved zoom is shown even with Zoom off (the crop window just gets smaller). In zoom mode the frame takes all touch
+  gestures (`touch-action: none`): a finger on it never scrolls the page. Geometry is in `src/zoomMath.js` (pure functions).
 - Overlays: rule of thirds, golden ratio (phi grid), grid, diagonals, golden triangle, golden
   spiral, center cross, none. Triangle and spiral can be flipped.
 - Local context `imageCropFrame`: focus, crop box, output size in px, trimmed side.
