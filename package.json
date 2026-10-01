@@ -1,7 +1,7 @@
 {
     "name": "image-crop-frame",
     "version": "1.0.0",
-    "description": "WeWeb coded component: image with a draggable crop window of a fixed ratio and composition overlays; the crop is a focus point (0–1).",
+    "description": "WeWeb coded component: image with a draggable crop window of a fixed ratio and composition overlays; the crop is a focus point (0\u20131).",
     "license": "MIT",
     "repository": {
         "type": "git",
@@ -9,7 +9,9 @@
     },
     "scripts": {
         "build": "weweb build",
-        "serve": "weweb serve"
+        "serve": "weweb serve",
+        "test": "node --no-warnings test/zoomMath.test.mjs",
+        "harness": "node dev/harness/build.mjs && echo \"Open dev/harness/index.html through a local server, e.g. python3 -m http.server 8765 --directory dev/harness\""
     },
     "dependencies": {},
     "devDependencies": {

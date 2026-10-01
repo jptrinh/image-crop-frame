@@ -22,7 +22,8 @@ is the largest box of the ratio divided by the zoom (`crop:w:h:fp:x:y` at the or
   its centre is within **Snap distance** px (8), and a centre line shows (style property **Snap line color**). Arrow keys don't snap.
 - **Zoom** (property `zoomEnabled`, off by default): the frame stays put and the image moves and scales under
   it, like the iOS crop (the rest of the image shows darkened, `Frame margin` px around the frame). Bind `zoom` to
-  the saved value. Zoom with Cmd / Ctrl + scroll or a trackpad pinch (around the pointer), `+` / `-` keys once focused;
+  the saved value, and `minOutputWidth` / `minOutputHeight` to the limits the backend uses (the app gets them from
+  its image list endpoint), so the gesture stops where the server would cap it. Zoom with Cmd / Ctrl + scroll or a trackpad pinch (around the pointer), `+` / `-` keys once focused;
   a plain scroll moves the image once zoomed; drag moves it; double-click shows the whole image. The zoom is capped
   so the exported crop keeps `Min output width` px (1080) and, if set, `Min output height` px (0 = not checked): the
   same formula as the backend, `maxZoom = max(1, min(boxW / minW, boxH / minH))` with `boxW = min(imgW, imgH × ratio)`.
@@ -40,4 +41,6 @@ is the largest box of the ratio divided by the zoom (`crop:w:h:fp:x:y` at the or
 npm i
 npm run serve --port=8080
 npm run build -- --name=image-crop-frame --type=wwobject
+npm test         # geometry of the zoom (src/zoomMath.js), plain node
+npm run harness  # standalone test page outside WeWeb (dev/harness), see dev/harness/build.mjs
 ```
