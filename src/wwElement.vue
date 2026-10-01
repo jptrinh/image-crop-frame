@@ -30,6 +30,9 @@
                 draggable="false"
                 @load="onImageLoad"
             />
+            <div v-if="shadeStyle" class="image-crop-frame__shade" :style="shadeStyle" aria-hidden="true">
+                <span class="image-crop-frame__shade-hole" :style="shadeHoleStyle"></span>
+            </div>
             <div
                 class="image-crop-frame__window"
                 :style="windowStyle"
@@ -618,8 +621,35 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
                 bottom: 'auto',
             };
         });
+        const darkenAlpha = computed(() => clamp(Number(props.content?.darken ?? 45) || 0, 0, 100) / 100);
+        // Zoom mode: the box is the whole element, wider than the image, so a shadow on the window would also darken
+        // the empty areas beside the image (a grey band). The shade is drawn over the image only, with a hole
+        // where the frame is.
+        const shadeStyle = computed(() => {
+            const rect = imageRect.value;
+            // Not before the image has loaded: it would draw a dark box where the spinner turns
+            if (!zoomMode.value || !rect || !frameRect.value || !isLoaded.value) return null;
+            return {
+                left: `${rect.left}px`,
+                top: `${rect.top}px`,
+                width: `${rect.width}px`,
+                height: `${rect.height}px`,
+            };
+        });
+        const shadeHoleStyle = computed(() => {
+            const rect = imageRect.value;
+            const frame = frameRect.value;
+            if (!rect || !frame) return null;
+            return {
+                left: `${frame.left - rect.left}px`,
+                top: `${frame.top - rect.top}px`,
+                width: `${frame.width}px`,
+                height: `${frame.height}px`,
+                boxShadow: `0 0 0 9999px rgba(0, 0, 0, ${darkenAlpha.value})`,
+            };
+        });
         const windowStyle = computed(() => {
-            const darken = clamp(Number(props.content?.darken ?? 45) || 0, 0, 100) / 100;
+            const darken = darkenAlpha.value;
             const overlayOpacity = clamp(Number(props.content?.overlayOpacity ?? 40) || 0, 0, 100) / 100;
             const rect = cropRect.value;
             const frame = frameRect.value;
@@ -639,8 +669,9 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
                       };
             return {
                 ...place,
-                // Darken everything outside the crop: a huge shadow clipped by the box
-                boxShadow: `0 0 0 9999px rgba(0, 0, 0, ${darken})`,
+                // Classic mode: darken everything outside the crop with a huge shadow clipped by the box (= the image).
+                // Zoom mode: the shade layer does it, over the image only
+                boxShadow: zoomMode.value ? 'none' : `0 0 0 9999px rgba(0, 0, 0, ${darken})`,
                 '--icf-overlay-opacity': overlayOpacity,
             };
         });
@@ -681,6 +712,8 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
             isStraightOverlay,
             boxStyle,
             imageStyle,
+            shadeStyle,
+            shadeHoleStyle,
             windowStyle,
             accessibleName,
             helpId,
@@ -733,6 +766,16 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
     &.is-loaded {
         opacity: 1;
     }
+}
+
+// Zoom mode: the darkening, over the image only (its overflow clips the hole's shadow)
+.image-crop-frame__shade {
+    position: absolute;
+    overflow: hidden;
+    pointer-events: none;
+}
+.image-crop-frame__shade-hole {
+    position: absolute;
 }
 
 // Zoom mode: the image is placed in px (exact ratio), whatever its natural size
