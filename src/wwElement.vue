@@ -470,7 +470,10 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
 
         // Wheel: ⌘ / Ctrl + wheel and the trackpad pinch (the browser sends it as ctrl + wheel) zoom around the pointer;
         // a plain scroll (two fingers) moves the image once zoomed. Without a modifier and without a zoom,
-        // the page keeps scrolling.
+        // a vertical scroll still scrolls the page.
+        // Largest delta taken from one wheel event: a mouse notch (~100 px, more with ctrl on Windows) would otherwise
+        // jump straight to the cap, while a pinch sends many small deltas
+        const MAX_WHEEL_DELTA = 40;
         const onWheel = event => {
             if (!zoomMode.value || !canInteract.value) return;
             const lines = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 400 : 1;
@@ -479,12 +482,13 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
             const rect = box.value?.getBoundingClientRect?.();
             if (!rect) return;
             if (event.ctrlKey || event.metaKey) {
-                if (maxZoom.value <= 1) return;
+                // Always swallowed over the frame, even when the zoom can't change: otherwise the browser zooms the page
                 event.preventDefault();
-                // A pinch sends small deltas, a wheel notch big ones
-                const speed = event.ctrlKey ? 0.01 : 0.004;
+                // Not while dragging: the drag measures from where it started, a size change would make it jump
+                if (drag || maxZoom.value <= 1) return;
+                const step = clamp(deltaY, -MAX_WHEEL_DELTA, MAX_WHEEL_DELTA);
                 const changed = zoomAt(
-                    zoom.value * Math.exp(-deltaY * speed),
+                    zoom.value * Math.exp(-step * 0.01),
                     event.clientX - rect.left,
                     event.clientY - rect.top
                 );
@@ -492,10 +496,13 @@ context.local.data?.['imageCropFrame']?.['output']?.['width']
             } else if (isZoomed.value && canMove.value) {
                 event.preventDefault();
                 const size = imageRect.value;
-                if (!size) return;
+                if (drag || !size) return;
                 // Scrolling right shows what is on the right: the crop moves right
                 moveTo(cropRect.value.left + deltaX / size.width, cropRect.value.top + deltaY / size.height);
                 emitChangeSoon();
+            } else if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                // A sideways two-finger swipe would go back / forward in the browser history (Chrome on macOS)
+                event.preventDefault();
             }
         };
         // The listener is added by hand: it must not be passive to be able to stop the page scrolling
